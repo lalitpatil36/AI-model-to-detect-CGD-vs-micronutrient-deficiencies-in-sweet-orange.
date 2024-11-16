@@ -1,0 +1,257 @@
+Project Overview:
+
+This project uses artificial intelligence (AI) to help detect two common problems in citrus plants: Citrus Greening Disease (CGD) and micronutrient deficiencies in the leaves. The AI model is trained with images of citrus leaves, which are captured under different conditions (like varying temperatures, backgrounds, and blurriness). The project also uses a laboratory technique called PCR (Polymerase Chain Reaction) to detect the bacteria responsible for CGD.
+
+How the Model Works:
+
+Image Preparation:
+
+The images of citrus leaves are prepared by making small changes to them (like rotating, zooming, or flipping) to help the model learn better.
+Only a few changes are made to the images used for testing.
+Building the Model:
+
+The AI uses two different deep learning models to learn from the images:
+HFLF-MS Model: This model looks at the fine details and broader patterns of the leaf to understand if it’s diseased or healthy.
+DS-MENet Model: This model is more efficient, needing fewer resources but still capturing important features to make a decision.
+Training the Model:
+
+The model is trained to distinguish between healthy and diseased leaves. After training, the model is saved and can be used to classify new images.
+The model is trained using 500 rounds of learning to ensure it gets accurate.
+Testing the Model:
+
+After training, the model is tested to see how well it performs. This includes checking its accuracy (how many times it was correct), precision, recall, and other important measures.
+The performance is shown using a confusion matrix, a tool that helps visualize the model’s ability to classify leaves correctly.
+Using the Model for Prediction:
+
+The model can predict if a leaf is healthy or diseased based on a new image.
+It shows the results by displaying the image and the prediction label.
+How to Use the Code:
+
+Dataset: Organize your images into folders named "train" (for training) and "test" (for testing), with subfolders for each class (like "Diseased" and "Healthy").
+Setup: Install the necessary tools by running the following command:
+bash
+Copy code
+pip install tensorflow opencv-python matplotlib seaborn scikit-learn numpy
+Execution: Run the script to train the model. After training, you can use the model to make predictions on new images.
+What This Model Helps With:
+
+The AI model can detect Citrus Greening Disease and identify micronutrient deficiencies in citrus leaves. This can help farmers spot problems early, enabling them to take action and manage their crops more effectively. It is a valuable tool for precision agriculture—using technology to optimize farming practices and improve crop health.
+
+# Import required libraries
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, Input, DepthwiseConv2D, BatchNormalization, ReLU, GlobalAveragePooling2D
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, classification_report
+import seaborn as sns
+import numpy as np
+import cv2
+import os
+from matplotlib.colors import LinearSegmentedColormap
+
+# Set the directory paths
+train_dir = 'D:/Documents/sweet orange dataset/train'  # Training data directory path
+test_dir = 'D:/Documents/sweet orange dataset/valid'  # Validation data directory path
+
+# Check directory contents
+print("Training directory contents:")
+for root, dirs, files in os.walk(train_dir):
+    print(root, "contains", len(files), "files")  # Lists number of files in each directory
+
+print("Validation directory contents:")
+for root, dirs, files in os.walk(test_dir):
+    print(root, "contains", len(files), "files")  # Lists number of files in each directory
+
+# Data augmentation and normalization
+train_datagen = ImageDataGenerator(
+    rescale=1./255,  # Normalization of pixel values
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True  # Augmentation for training images
+)
+
+test_datagen = ImageDataGenerator(rescale=1./255)  # Normalization for validation images
+
+train_generator = train_datagen.flow_from_directory(
+    train_dir,  # Directory for training data
+    target_size=(128, 128),  # Resize images to 128x128 pixels
+    batch_size=32,
+    class_mode='binary'  # Binary classification
+)
+
+validation_generator = test_datagen.flow_from_directory(
+    test_dir,  # Directory for validation data
+    target_size=(128, 128),  # Resize images to 128x128 pixels
+    batch_size=32,
+    class_mode='binary'  # Binary classification
+)
+
+# Print generator information
+print(f"Number of training samples: {train_generator.samples}")
+print(f"Number of validation samples: {validation_generator.samples}")
+
+# Define HFLF-MS Model with Matching Shapes
+def HFLF_MS_Model(input_shape=(128, 128, 3)):
+    inputs = Input(shape=input_shape)
+
+    # High-Frequency Path
+    high_freq = Conv2D(32, (3, 3), activation='relu', padding='same')(inputs)
+    high_freq = MaxPooling2D((2, 2), padding='same')(high_freq)
+    high_freq = Conv2D(64, (3, 3), activation='relu', padding='same')(high_freq)
+    high_freq = MaxPooling2D((2, 2), padding='same')(high_freq)
+
+    # Low-Frequency Path
+    low_freq = Conv2D(16, (5, 5), activation='relu', padding='same')(inputs)
+    low_freq = MaxPooling2D((2, 2), padding='same')(low_freq)
+    low_freq = Conv2D(32, (5, 5), activation='relu', padding='same')(low_freq)
+    low_freq = MaxPooling2D((2, 2), padding='same')(low_freq)
+
+    # Ensure the shapes match before concatenation
+    high_freq = Conv2D(128, (1, 1), activation='relu', padding='same')(high_freq)
+    low_freq = Conv2D(128, (1, 1), activation='relu', padding='same')(low_freq)
+
+    # Concatenate Paths
+    concat = tf.keras.layers.concatenate([high_freq, low_freq])
+    concat = Flatten()(concat)
+    concat = Dense(128, activation='relu')(concat)
+    concat = Dropout(0.5)(concat)
+    outputs = Dense(1, activation='sigmoid')(concat)
+
+    model = Model(inputs, outputs)
+    return model
+
+# Define DS-MENet Model
+def DS_MENet_Model(input_shape=(128, 128, 3)):
+    inputs = Input(shape=input_shape)
+    
+    x = Conv2D(32, (3, 3), padding='same')(inputs)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = DepthwiseConv2D((3, 3), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = Conv2D(64, (1, 1))(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = MaxPooling2D((2, 2))(x)
+    
+    x = DepthwiseConv2D((3, 3), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = Conv2D(128, (1, 1))(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = MaxPooling2D((2, 2))(x)
+    
+    x = GlobalAveragePooling2D()(x)
+    x = Flatten()(x)
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(0.5)(x)
+    outputs = Dense(1, activation='sigmoid')(x)
+    
+    model = Model(inputs, outputs)
+    return model
+
+# Load the saved model or create a new one
+model_path = 'my_model.h5'
+if os.path.exists(model_path):
+    model = load_model(model_path)
+    print("Model loaded from disk.")
+else:
+    # Choose the model to use
+    model_choice = 'HFLF_MS'  # Change to 'DS_MENet' to use the DS-MENet model
+
+    if model_choice == 'HFLF_MS':
+        model = HFLF_MS_Model()
+    else:
+        model = DS_MENet_Model()
+
+    model.compile(
+        loss='binary_crossentropy',
+        optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
+        metrics=['accuracy']
+    )
+
+    # Train the model
+    history = model.fit(
+        train_generator,
+        steps_per_epoch=train_generator.samples // 32,
+        epochs=500,  # Number of epochs to train
+        validation_data=validation_generator,
+        validation_steps=validation_generator.samples // 32
+    )
+
+    # Save the model to a file
+    model.save(model_path)
+    print("Model saved to disk.")
+
+    # Plot accuracy and loss graphs
+    acc = history.history['accuracy']
+    val_acc = history.history['val_accuracy']
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+    epochs_range = range(20)
+
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, acc, label='Training Accuracy')
+    plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+    plt.legend(loc='lower right')
+    plt.title('Training and Validation Accuracy')
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, loss, label='Training Loss')
+    plt.plot(epochs_range, val_loss, label='Validation Loss')
+    plt.legend(loc='upper right')
+    plt.title('Training and Validation Loss')
+    plt.show()
+
+# Evaluate the model
+scores = model.evaluate(validation_generator, steps=validation_generator.samples // 32)
+print('Test loss:', scores[0])
+print('Test accuracy:', scores[1])
+
+# Predict the test set results
+validation_generator.reset()  # Ensure the generator is reset
+predictions = model.predict(validation_generator, steps=validation_generator.samples // 32)
+predicted_classes = (predictions > 0.5).astype("int32").flatten()
+
+# Debug: Print the first few predictions
+print("Predictions (first 10):", predicted_classes[:10])
+
+true_classes = validation_generator.classes[:len(predicted_classes)]  # Ensure matching lengths
+
+# Debug: Print the first few true classes
+print("True classes (first 10):", true_classes[:10])
+
+class_labels = list(validation_generator.class_indices.keys())
+
+# Confusion matrix
+conf_matrix = confusion_matrix(true_classes, predicted_classes)
+
+# Custom colormap for red and green
+colors = [(1, 0, 0), (0, 1, 0)]  # Red and Green
+n_bins = 100  # Number of color bins
+cmap_name = 'custom_cmap'
+cm = LinearSegmentedColormap.from_list(cmap_name, colors, N=n_bins)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap=cm, xticklabels=class_labels, yticklabels=class_labels)
+plt.xlabel('Predicted')
+plt.ylabel('True')
+plt.title('Confusion Matrix')
+plt.show()
+
+# Compute additional metrics
+precision = precision_score(true_classes, predicted_classes, zero_division=1)
+recall = recall_score(true_classes, predicted_classes)
+f1 = f1_score(true_classes, predicted_classes)
+
+print(f'Precision: {precision}')
+print(f'Recall: {recall}')
+print(f'F1 Score: {f1}')
+
+# Compute support metric
+report = classification_report(true_classes, predicted_classes, target_names=class_labels)
+print("Classification Report:\n", report)
